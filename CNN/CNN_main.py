@@ -13,6 +13,7 @@ from tensorflow.examples.tutorials.mnist import input_data
 
 tf.reset_default_graph()
 
+
 ##### LOAD ONLY IF NOT HAVING BEEN LOADED #####
 if 'mnist' not in vars():
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
@@ -34,22 +35,32 @@ def show_img(array_1d):
 ##### DEFINE PARAMETERS #####
 n_height = 28
 n_width = 28
-conv1_out_chnl = 10
+conv1_out_chnl = 16
+conv2_out_chnl = 10
 conv1_window_size = 3
+conv2_window_size = 2
 n_output = 10
 batch_size = 250
 dense1_size = 250
-pool_filter_size = 2
-
+pool1_filter_size = 2
+pool2_filter_size = 2
+pool1_stride = 2
+pool2_stride = 1
 
 ##### CREATE TF VARIABLE #####
-f_conv1 = tf.Variable(tf.truncated_normal([conv1_window_size, conv1_window_size, 1, conv1_out_chnl], 0.1))
-b_conv1 = tf.Variable(tf.constant(0.1, shape = [conv1_out_chnl]))
-w_dense1 = tf.Variable(tf.truncated_normal(shape = [int(n_height * n_width / (pool_filter_size ** 2) * conv1_out_chnl), dense1_size], stddev = 0.1))
-b_dense1 = tf.Variable(tf.constant(0.1, shape = [dense1_size]))
-keep_prob = tf.placeholder(tf.float32)
-w_output = tf.Variable(tf.truncated_normal(shape = [dense1_size, 10], stddev = 0.1))
-b_output = tf.Variable(tf.constant(0.1, shape = [10]))
+## FIRST CONV LAYER
+f_conv1 = tf.Variable(tf.truncated_normal([conv1_window_size, conv1_window_size, 1, conv1_out_chnl], 0.1), name = 'conv1_kernel')
+b_conv1 = tf.Variable(tf.constant(0.1, shape = [conv1_out_chnl]), name = 'conv1_bias')
+## SECOND CONV LAYER
+f_conv2 = tf.Variable(tf.truncated_normal([conv2_window_size, conv2_window_size, 16, conv2_out_chnl], 0.1), name = 'conv2_kernel')
+b_conv2 = tf.Variable(tf.constant(0.1, shape = [conv2_out_chnl]), name = 'conv2_bias')
+## DENSELY CONNECTED LAYER
+w_dense1 = tf.Variable(tf.truncated_normal(shape = [int(n_height * n_width / (pool1_stride ** 2) * conv2_out_chnl), dense1_size], stddev = 0.1), name = 'dense_weight')
+b_dense1 = tf.Variable(tf.constant(0.1, shape = [dense1_size]), name = 'dense_bias')
+## OUTPUT LAYER
+w_output = tf.Variable(tf.truncated_normal(shape = [dense1_size, 10], stddev = 0.1), name = 'output_weight')
+b_output = tf.Variable(tf.constant(0.1, shape = [10]), name = 'output_bias')
+
 
 ##### CREATE TF PLACEHOLDER #####
 x = tf.placeholder(tf.float32, shape=[None, n_height * n_width])
@@ -61,19 +72,25 @@ def conv_model(input_layer):
     ## RESHAPE TO BATCH * 28 * 28 * 1
     input_layer = tf.reshape(input_layer, [-1, n_height, n_width, 1])
     ## FIRST CONV LAYER
-    conv1 = tf.nn.conv2d(input_layer, f_conv1, [1, 1, 1, 1], 'SAME')
-    conv1 = tf.nn.relu(conv1 + b_conv1)
-    ## MAX POOLING
-    pool1 = tf.nn.max_pool(conv1, [1, pool_filter_size, pool_filter_size, 1], [1, pool_filter_size, pool_filter_size, 1], 'SAME')
+    conv1 = tf.nn.conv2d(input_layer, f_conv1, [1, 1, 1, 1], 'SAME', name = 'conv1_main')
+    conv1 = tf.nn.relu(conv1 + b_conv1, name = 'conv1_actn')
+    ## MAX POOLING 1
+    pool1 = tf.nn.max_pool(conv1, [1, pool1_filter_size, pool1_filter_size, 1], [1, pool1_stride, pool1_stride, 1], 'SAME', name = 'maxpool1')
+    ## SECOND CONV LAYER
+    conv2 = tf.nn.conv2d(pool1, f_conv2, [1, 1, 1, 1], 'SAME', name = 'conv2_main')
+    conv2 = tf.nn.relu(conv2 + b_conv2, name = 'conv2_actn')
+    ## MAX POOLING 2
+    pool2 = tf.nn.max_pool(conv2, [1, pool2_filter_size, pool2_filter_size, 1], [1, pool2_stride, pool2_stride, 1], 'SAME', name = 'maxpool2')
     ## DENSELY CONNECTED LAYER
-    dense1 = tf.matmul(tf.reshape(pool1, [-1, int(n_height * n_width / (2 ** 2) * conv1_out_chnl)]), w_dense1)
-    dense1 = tf.nn.relu(dense1) + b_dense1
+    dense1 = tf.matmul(tf.reshape(pool2, [-1, 1960]), w_dense1, name = 'dense_layer_main')
+    dense1 = tf.nn.relu(dense1 + b_dense1, name = 'dense_layer_actn')
     ## DROUPOUT
-    drop1 = tf.nn.dropout(dense1, keep_prob)
+    drop1 = tf.nn.dropout(dense1, keep_prob, name = 'dropout')
     ## OUTPUT LAYER
-    output = tf.matmul(drop1, w_output)
-    output = tf.nn.softmax(output + b_output)
+    output = tf.matmul(drop1, w_output, name = 'output_main')
+    output = tf.nn.softmax(output + b_output, name = 'output_softmax')
     return(output)
+    
     
 pred_y = conv_model(x)
 cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y, logits = pred_y))
@@ -81,6 +98,7 @@ optimise = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 correct_prediction = tf.equal(tf.argmax(pred_y, 1), tf.argmax(y, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
       
+
 def train_model(ep = 20):  
     
     with tf.Session() as sess:
@@ -116,16 +134,20 @@ def train_model(ep = 20):
         
         ##### PLOT CONVERGENCE #####
         plt.figure()    
-        ax1 = plt.plot(range(ep), overall_log[0], color = 'red', label = 'Train')
-        ax2 = plt.plot(range(ep), overall_log[1], color = 'green', label = 'Test')
+        plt.plot(range(ep), overall_log[0], color = 'red', label = 'Train')
+        plt.plot(range(ep), overall_log[1], color = 'green', label = 'Test')
         plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.) 
         plt.xlabel('Training Epoch')
         plt.ylabel('Accuracy')
         plt.title('ConvNet Convergence')
         
         saver = tf.train.Saver()
-        saver.save(sess)
+        saver.save(sess, './model/mymodel')
+        
+        writer = tf.summary.FileWriter('./model/events/1')
+        writer.add_graph(sess.graph)
     
+    return(sess)
     
 if __name__ == '__main__':
-    train_model()
+    sess1 = train_model(ep = 10)
