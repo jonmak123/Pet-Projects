@@ -7,3 +7,10 @@ Funcional. Awaiting further visualisation on tensorboard and hidden layer weight
 170901:
 
 Extra conv layer added. Cleaned variable names for tensorboard viz.
+
+##################################
+
+170904:
+
+Added Tensorboard features
+Assigned appropriate namescope
